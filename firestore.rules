@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isActiveUser() {
+      return signedIn() && userDoc().data.active == true;
+    }
+
+    function isAdmin() {
+      return isActiveUser() && userDoc().data.role == 'admin';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow read: if isActiveUser();
+      allow create: if isAdmin() || (
+        signedIn() && request.auth.uid == userId
+      );
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /stores/default/settings/{doc} {
+      allow read: if isActiveUser();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isActiveUser() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['receiptCounter'])
+      );
+      allow delete: if false;
+    }
+
+    match /stores/default/products/{id} {
+      allow read: if isActiveUser();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isActiveUser() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock'])
+      );
+    }
+
+    match /stores/default/customers/{id} {
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser();
+      allow delete: if isAdmin();
+    }
+
+    match /stores/default/suppliers/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /stores/default/purchases/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /stores/default/stock_movements/{id} {
+      allow read: if isActiveUser();
+      allow create: if isAdmin() || (
+        isActiveUser() && request.resource.data.type == 'sale'
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    match /stores/default/sales/{id} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser();
+      allow update, delete: if isAdmin();
+    }
+  }
+}
